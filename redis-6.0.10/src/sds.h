@@ -29,7 +29,9 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
+/*
+sds简单动态字符串是redis的基本结构之一，用于存储字符串与整形数据。
+*/
 #ifndef __SDS_H
 #define __SDS_H
 
@@ -41,6 +43,14 @@ extern const char *SDS_NOINIT;
 #include <stdint.h>
 
 typedef char *sds;
+/*
+sdshdr5-sdshdr64是sds的五种基本类型的结构。sdshdr5存储长度小于32的短字符串
+len: 字符串真正的长度，不包含空终止字符
+alloc: 除去表头和终止符的buf数组长度，也就是最大容量
+flags: 标志header的类型，低3位标记类型，高五位预留
+buf: 字符数组，实际存储字符
+__attribute__ ((packed)) 的作用就是告诉编译器取消结构在编译过程中的优化对齐,按照实际占用字节数进行对齐
+*/
 
 /* Note: sdshdr5 is never used, we just access the flags byte directly.
  * However is here to document the layout of type 5 SDS strings. */
@@ -80,10 +90,19 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_TYPE_64 4
 #define SDS_TYPE_MASK 7
 #define SDS_TYPE_BITS 3
+
+/*
+通过s的地址获取sdshdr结构体地址
+*/
 #define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
+
+//sdshdr5字符串长度
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
+/*
+获取传入的字符串s的真正长度
+*/
 static inline size_t sdslen(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -100,7 +119,9 @@ static inline size_t sdslen(const sds s) {
     }
     return 0;
 }
-
+/*
+获取传入的字符串s内存的空闲长度
+*/
 static inline size_t sdsavail(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
