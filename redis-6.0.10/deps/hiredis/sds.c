@@ -141,6 +141,7 @@ sds sdsempty(void) {
 }
 
 /* Create a new sds string starting from a null terminated C string. */
+// 创建一个sds，把字符串长度和字符串传递给sdsnewlen，来完成创建。
 sds sdsnew(const char *init) {
     size_t initlen = (init == NULL) ? 0 : strlen(init);
     return sdsnewlen(init, initlen);

@@ -35,7 +35,7 @@ sds简单动态字符串是redis的基本结构之一，用于存储字符串与
 #ifndef __SDS_H
 #define __SDS_H
 
-#define SDS_MAX_PREALLOC (1024*1024)
+#define SDS_MAX_PREALLOC (1024*1024)//1MB
 extern const char *SDS_NOINIT;
 
 #include <sys/types.h>
@@ -148,6 +148,9 @@ static inline size_t sdsavail(const sds s) {
     return 0;
 }
 
+/*
+设定给定的sds的长度
+*/
 static inline void sdssetlen(sds s, size_t newlen) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -172,6 +175,9 @@ static inline void sdssetlen(sds s, size_t newlen) {
     }
 }
 
+/*
+增加给定的sds的长度
+*/
 static inline void sdsinclen(sds s, size_t inc) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -197,6 +203,9 @@ static inline void sdsinclen(sds s, size_t inc) {
     }
 }
 
+/*
+获得当前的sds的预分配长度
+*/
 /* sdsalloc() = sdsavail() + sdslen() */
 static inline size_t sdsalloc(const sds s) {
     unsigned char flags = s[-1];
@@ -215,6 +224,7 @@ static inline size_t sdsalloc(const sds s) {
     return 0;
 }
 
+// 设定当前sds的预分配长度
 static inline void sdssetalloc(sds s, size_t newlen) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
