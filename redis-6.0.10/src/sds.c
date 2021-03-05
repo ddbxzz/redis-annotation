@@ -276,7 +276,9 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
  * will require a reallocation.
  *
  * After the call, the passed sds string is no longer valid and all the
- * references must be substituted with the new pointer returned by the call. */
+ * references must be substituted with the new pointer returned by the call. 
+ * 对空闲过多的sds做缩容，与sdsMakeRoomFor相反
+ * */
 sds sdsRemoveFreeSpace(sds s) {
     void *sh, *newsh;
     char type, oldtype = s[-1] & SDS_TYPE_MASK;
@@ -297,6 +299,11 @@ sds sdsRemoveFreeSpace(sds s) {
      * required, we just realloc(), letting the allocator to do the copy
      * only if really needed. Otherwise if the change is huge, we manually
      * reallocate the string to use the different header type. */
+    /*
+    为什么可以维持oldtype呢？因为这样可以减少对sds头的重新分配，
+    因为sds8及以上的sds都是使用len变量来存储sds信息的，所以不
+    需要申请新的头，只需要紧缩它底层的存储空间就够了，这样可以避免或减少内存拷贝。
+    */
     if (oldtype==type || type > SDS_TYPE_8) {
         newsh = s_realloc(sh, oldhdrlen+len+1);
         if (newsh == NULL) return NULL;
