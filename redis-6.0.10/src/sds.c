@@ -935,7 +935,9 @@ sds *sdssplitlen(const char *s, ssize_t len, const char *sep, int seplen, int *c
             if (newtokens == NULL) goto cleanup;
             tokens = newtokens;
         }
-        /* search the separator */
+        /* search the separator 
+        将s由分隔符sep分割开的字符串存入tokens中，如果sep为s的开头或者结尾字符串，则存在长度为0的sds字符串
+        */
         if ((seplen == 1 && *(s+j) == sep[0]) || (memcmp(s+j,sep,seplen) == 0)) {
             tokens[elements] = sdsnewlen(s+start,j-start);
             if (tokens[elements] == NULL) goto cleanup;
@@ -961,7 +963,9 @@ cleanup:
     }
 }
 
-/* Free the result returned by sdssplitlen(), or do nothing if 'tokens' is NULL. */
+/* Free the result returned by sdssplitlen(), or do nothing if 'tokens' is NULL.
+释放sdssplitlen返回的数组
+ */
 void sdsfreesplitres(sds *tokens, int count) {
     if (!tokens) return;
     while(count--)
