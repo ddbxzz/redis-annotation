@@ -38,7 +38,9 @@
  * by the user before to call listRelease(), or by setting a free method using
  * listSetFreeMethod.
  *
- * On error, NULL is returned. Otherwise the pointer to the new list. */
+ * On error, NULL is returned. Otherwise the pointer to the new list. 
+ * 初始化链表，不包含任何节点
+ * */
 list *listCreate(void)
 {
     struct list *list;
@@ -53,7 +55,9 @@ list *listCreate(void)
     return list;
 }
 
-/* Remove all the elements from the list without destroying the list itself. */
+/* Remove all the elements from the list without destroying the list itself. 
+释放链表中的所有节点
+*/
 void listEmpty(list *list)
 {
     unsigned long len;
@@ -73,7 +77,9 @@ void listEmpty(list *list)
 
 /* Free the whole list.
  *
- * This function can't fail. */
+ * This function can't fail. 
+ * 释放给定链表及其所有节点
+ * */
 void listRelease(list *list)
 {
     listEmpty(list);
