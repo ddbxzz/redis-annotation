@@ -978,7 +978,19 @@ void sdsfreesplitres(sds *tokens, int count) {
  * escapes in the form "\n\r\a...." or "\x<hex-number>".
  *
  * After the call, the modified sds string is no longer valid and all the
- * references must be substituted with the new pointer returned by the call. */
+ * references must be substituted with the new pointer returned by the call. 
+ * 
+ * 在sds字符串“s”后面附加一个转义字符串表示，其中所有不可打印字符(用isprint()测试)都被转换为转义字符，
+ * 格式为“\n\r\a....”或“\x<十六进制数字>”。
+ * 
+ *  sds x = sdsnewlen("\a\n\0foo\r",7);
+ *  sds y = sdscatrepr(sdsempty(),x,sdslen(x));
+ *  printf("x : %s\n", x);
+ *  printf("y : %s\n", y);
+ * x : 
+ *
+ *  y : "\a\n\x00foo\r"
+ * */
 sds sdscatrepr(sds s, const char *p, size_t len) {
     s = sdscatlen(s,"\"",1);
     while(len--) {
@@ -1172,7 +1184,12 @@ err:
  * will have the effect of turning the string "hello" into "0ell1".
  *
  * The function returns the sds string pointer, that is always the same
- * as the input pointer since no resize is needed. */
+ * as the input pointer since no resize is needed. 
+ * 
+ * 
+ * 
+ * 修改字符串，将'from'字符串中指定的所有字符替换为'to'数组中相应的字符。
+ * */
 sds sdsmapchars(sds s, const char *from, const char *to, size_t setlen) {
     size_t j, i, l = sdslen(s);
 
@@ -1188,7 +1205,9 @@ sds sdsmapchars(sds s, const char *from, const char *to, size_t setlen) {
 }
 
 /* Join an array of C strings using the specified separator (also a C string).
- * Returns the result as an sds string. */
+ * Returns the result as an sds string. 
+ * 使用指定的分隔符(也是一个C字符串)连接一个C字符串数组。以sds字符串的形式返回结果
+ * */
 sds sdsjoin(char **argv, int argc, char *sep) {
     sds join = sdsempty();
     int j;
@@ -1200,7 +1219,9 @@ sds sdsjoin(char **argv, int argc, char *sep) {
     return join;
 }
 
-/* Like sdsjoin, but joins an array of SDS strings. */
+/* Like sdsjoin, but joins an array of SDS strings. 
+*连接sds字符串
+*/
 sds sdsjoinsds(sds *argv, int argc, const char *sep, size_t seplen) {
     sds join = sdsempty();
     int j;
