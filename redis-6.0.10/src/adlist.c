@@ -189,7 +189,9 @@ void listDelNode(list *list, listNode *node)
 /* Returns a list iterator 'iter'. After the initialization every
  * call to listNext() will return the next element of the list.
  *
- * This function can't fail. */
+ * This function can't fail. 
+ * 获取list的迭代器，direction指定方向
+ * */
 listIter *listGetIterator(list *list, int direction)
 {
     listIter *iter;
@@ -208,12 +210,16 @@ void listReleaseIterator(listIter *iter) {
     zfree(iter);
 }
 
-/* Create an iterator in the list private iterator structure */
+/* Create an iterator in the list private iterator structure 
+设置list迭代器到头结点
+*/
 void listRewind(list *list, listIter *li) {
     li->next = list->head;
     li->direction = AL_START_HEAD;
 }
-
+/* 
+设置list迭代器到尾结点
+*/
 void listRewindTail(list *list, listIter *li) {
     li->next = list->tail;
     li->direction = AL_START_TAIL;
@@ -253,7 +259,13 @@ listNode *listNext(listIter *iter)
  * to copy the node value. Otherwise the same pointer value of
  * the original node is used as value of the copied node.
  *
- * The original list both on success or error is never modified. */
+ * The original list both on success or error is never modified. 
+ * 
+ * 复制整个list。在内存不足时返回NULL。成功返回原始list的副本。
+ * 使用listSetDupMethod()函数设置的'Dup'方法用于复制节点值。
+ * 否则，将使用原始节点的指针值作为复制节点的值。
+ * 原始list无论成功还是错误都不会被修改。
+ * */
 list *listDup(list *orig)
 {
     list *copy;
@@ -300,6 +312,9 @@ listNode *listSearchKey(list *list, void *key)
     listNode *node;
 
     listRewind(list, &iter);
+    /*
+    如果没有设置'match'方法，则每个节点的'value'指针将直接与'key'指针进行比较。
+    */
     while((node = listNext(&iter)) != NULL) {
         if (list->match) {
             if (list->match(node->value, key)) {
@@ -318,7 +333,10 @@ listNode *listSearchKey(list *list, void *key)
  * where 0 is the head, 1 is the element next to head
  * and so on. Negative integers are used in order to count
  * from the tail, -1 is the last element, -2 the penultimate
- * and so on. If the index is out of range NULL is returned. */
+ * and so on. If the index is out of range NULL is returned. 
+ * 
+ * 返回指定索引处的元素
+ * */
 listNode *listIndex(list *list, long index) {
     listNode *n;
 
