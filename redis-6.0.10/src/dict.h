@@ -44,14 +44,20 @@
 /* Unused arguments generate annoying warnings... */
 #define DICT_NOTUSED(V) ((void) V)
 
+//hash表节点，Key-Value节点
 typedef struct dictEntry {
+    //hash表节点的key
     void *key;
+
+    //hash表节点的value
     union {
         void *val;
         uint64_t u64;
         int64_t s64;
         double d;
     } v;
+
+    //指向下个hash表节点，形成链表
     struct dictEntry *next;
 } dictEntry;
 
