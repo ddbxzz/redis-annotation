@@ -117,12 +117,31 @@ typedef struct dict {
  * dictAdd, dictFind, and other functions against the dictionary even while
  * iterating. Otherwise it is a non safe iterator, and only dictNext()
  * should be called while iterating. */
+
+/*
+迭代器是用于迭代遍历字典中所有的节点的一个工具，有两种，一种是安全迭代器，
+一种是不安全迭代器。安全迭代器就是指，在迭代的过程中，允许对字典结构进行修改
+，也即允许你添加、删除、修改字典中的键值对节点。
+不安全迭代器即不允许对字典中任何节点进行修改。
+*/
 typedef struct dictIterator {
+    //指向一个即将被迭代的字典结构
     dict *d;
+    // 记录了当前迭代到字典中的桶索引
     long index;
+    //table 取值为 0 或 1，表示当前迭代的是字典中哪个哈希表，
+    //safe 标记当前迭代器是安全的或是不安全的。
     int table, safe;
+    //entry记录的是当前迭代的节点，nextEntry的值等于entry的 
+    //next指针，用于防止当前节点接受删除操作后续节点丢失情况。
     dictEntry *entry, *nextEntry;
-    /* unsafe iterator fingerprint for misuse detection. */
+
+    /* unsafe iterator fingerprint for misuse detection. 
+
+    fingerprint 保存了dictFingerprint函数根据当前字典的基本
+    信息计算的一个指纹信息，稍有一丁点变动，指纹信息就会发生变化，
+    用于不安全迭代器检验。
+    */
     long long fingerprint;
 } dictIterator;
 
