@@ -152,10 +152,12 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
 #define DICT_HT_INITIAL_SIZE     4
 
 /* ------------------------------- Macros ------------------------------------*/
+//字典释放val
 #define dictFreeVal(d, entry) \
     if ((d)->type->valDestructor) \
         (d)->type->valDestructor((d)->privdata, (entry)->v.val)
 
+//字典val函数复制时候调用，如果dict中的dictType定义了这个函数指针
 #define dictSetVal(d, entry, _val_) do { \
     if ((d)->type->valDup) \
         (entry)->v.val = (d)->type->valDup((d)->privdata, _val_); \
@@ -172,30 +174,41 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
 #define dictSetDoubleVal(entry, _val_) \
     do { (entry)->v.d = _val_; } while(0)
 
+//调用dictType定义的key析构函数
 #define dictFreeKey(d, entry) \
     if ((d)->type->keyDestructor) \
         (d)->type->keyDestructor((d)->privdata, (entry)->key)
-
+//key复制
 #define dictSetKey(d, entry, _key_) do { \
     if ((d)->type->keyDup) \
         (entry)->key = (d)->type->keyDup((d)->privdata, _key_); \
     else \
         (entry)->key = (_key_); \
 } while(0)
-
+//调用dictType定义的key比较函数，没有定义直接key值直接比较
 #define dictCompareKeys(d, key1, key2) \
     (((d)->type->keyCompare) ? \
         (d)->type->keyCompare((d)->privdata, key1, key2) : \
         (key1) == (key2))
 
+//获取指定key的哈希值
 #define dictHashKey(d, key) (d)->type->hashFunction(key)
+//获取指定节点的key
 #define dictGetKey(he) ((he)->key)
+//获取指定节点的value
 #define dictGetVal(he) ((he)->v.val)
+//获取指定节点的value，值为signed int
 #define dictGetSignedIntegerVal(he) ((he)->v.s64)
+//获取指定节点的value，值为unsigned int
 #define dictGetUnsignedIntegerVal(he) ((he)->v.u64)
+//获取指定节点的value，值为double
 #define dictGetDoubleVal(he) ((he)->v.d)
+//获取字典中哈希表的总长度，总长度=哈希表1散列数组长度+哈希表2散列数组长度
 #define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
+//获取字典中哈希表已被使用的节点数量，已被使用的节点数量 = 
+//哈希表1散列数组已被使用的节点数量+哈希表2散列数组已被使用的节点数量
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
+// 字典当前是否正在进行rehash操作
 #define dictIsRehashing(d) ((d)->rehashidx != -1)
 
 /* API */
