@@ -61,29 +61,55 @@ typedef struct dictEntry {
     struct dictEntry *next;
 } dictEntry;
 
+//保存一簇用于操作特定键值对的函数指针
 typedef struct dictType {
+    //计算hash值
     uint64_t (*hashFunction)(const void *key);
+    //复制键
     void *(*keyDup)(void *privdata, const void *key);
+    //复制值
     void *(*valDup)(void *privdata, const void *obj);
+    //比较键
     int (*keyCompare)(void *privdata, const void *key1, const void *key2);
+    //销毁键
     void (*keyDestructor)(void *privdata, void *key);
+    //销毁值
     void (*valDestructor)(void *privdata, void *obj);
 } dictType;
 
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
+//hash表节点，Key-Value节点
 typedef struct dictht {
+    //hash表数组
     dictEntry **table;
+    //hash表大小
     unsigned long size;
+    //hash表大小掩码，用于计算索引值，总是等于size - 1
     unsigned long sizemask;
+    //hash表现有节点数量
     unsigned long used;
 } dictht;
 
+//Redis Dict 中定义了两张哈希表，是为了后续字典的扩展作Rehash之用
 typedef struct dict {
+
+    /*
+    type和privdata属性是针对不同类型的键值对，为创建多态字典而设置的
+    */
+    //一个指向dictType结构的指针（type）。它通过自定义的方式使得dict的key和value能够存储任何类型的数据。
     dictType *type;
+
+    //一个私有数据指针。由调用者在创建dict的时候传进来。
     void *privdata;
+
+    //两个哈希表，只有在rehash的过程中，ht[0]和ht[1]才都有效。一般情况下，只有ht[0]有效，ht[1]里面没有任何数据。
     dictht ht[2];
+
+    //rehash索引，记录rehash进度的标志，-1表示rehash未进行
     long rehashidx; /* rehashing not in progress if rehashidx == -1 */
+
+    //当前正在进行遍历的iterator的个数。
     unsigned long iterators; /* number of iterators currently running */
 } dict;
 
