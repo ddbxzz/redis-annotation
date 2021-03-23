@@ -205,30 +205,46 @@ int dictExpand(dict *d, unsigned long size)
  * since part of the hash table may be composed of empty spaces, it is not
  * guaranteed that this function will rehash even a single bucket, since it
  * will visit at max N*10 empty buckets in total, otherwise the amount of
- * work it does would be unbound and the function may block for a long time. */
+ * work it does would be unbound and the function may block for a long time. 
+ * 
+ * 
+ * 在每次调用 dictRehash 时，最多迁移 n 个非空 bucket
+ * 返回 1 时表示 Rehash 操作还未完成，未处于Rehash状态或Rehash完成时返回 0
+ * 在渐进式 Rehash 期间，新添加的元素会添加至 ht[1] 中
+ * 在添加(dictAddRaw)、查找(dictFind, dictGetRandomKey, dictGetSomeKeys)、
+ * 删除(dictGenericDelete) 时，如果此时无迭代器在遍历字典，则会调用 dictRehash(d,1) 执行渐进式 Rehash
+ * */
 int dictRehash(dict *d, int n) {
+    //一步rehash中最多访问的空桶的次数
     int empty_visits = n*10; /* Max number of empty buckets to visit. */
     if (!dictIsRehashing(d)) return 0;
 
-    while(n-- && d->ht[0].used != 0) {
+    while(n-- && d->ht[0].used != 0) {  // 分n步进行rehash
         dictEntry *de, *nextde;
 
         /* Note that rehashidx can't overflow as we are sure there are more
-         * elements because ht[0].used != 0 */
+         * elements because ht[0].used != 0 
+         * 注意rehashidx不能越界，因为由于ht[0].used != 0，我们知道还有元素没有被rehash
+         * */
         assert(d->ht[0].size > (unsigned long)d->rehashidx);
-        while(d->ht[0].table[d->rehashidx] == NULL) {
+        //找到非空的哈希表下标
+        while(d->ht[0].table[d->rehashidx] == NULL) {  //遇到空桶
             d->rehashidx++;
-            if (--empty_visits == 0) return 1;
+            if (--empty_visits == 0) return 1;   // 当前一次rehash过程遇到的空桶数量等于n*10则直接结束
         }
+
+        //获得当前桶中第一个key-value对的指针
         de = d->ht[0].table[d->rehashidx];
         /* Move all the keys in this bucket from the old to the new hash HT */
+        //把当前桶中所有的key从旧哈希表移动到新哈希表 ht[0]->ht[1]
         while(de) {
             uint64_t h;
 
             nextde = de->next;
             /* Get the index in the new hash table */
+            //获取key的哈希值并计算其在新哈希表中桶的索引值
             h = dictHashKey(d, de->key) & d->ht[1].sizemask;
-            de->next = d->ht[1].table[h];
+            de->next = d->ht[1].table[h];  //在bukect对应链表的头节点前插入de
             d->ht[1].table[h] = de;
             d->ht[0].used--;
             d->ht[1].used++;
@@ -239,6 +255,7 @@ int dictRehash(dict *d, int n) {
     }
 
     /* Check if we already rehashed the whole table... */
+    //如果已经完成了，释放旧的哈希表，返回0 
     if (d->ht[0].used == 0) {
         zfree(d->ht[0].table);
         d->ht[0] = d->ht[1];
@@ -248,9 +265,11 @@ int dictRehash(dict *d, int n) {
     }
 
     /* More to rehash... */
+    //继续下一次rehash 
     return 1;
 }
 
+//获取当前时间戳 ms
 long long timeInMilliseconds(void) {
     struct timeval tv;
 
@@ -261,6 +280,7 @@ long long timeInMilliseconds(void) {
 /* Rehash in ms+"delta" milliseconds. The value of "delta" is larger 
  * than 0, and is smaller than 1 in most cases. The exact upper bound 
  * depends on the running time of dictRehash(d,100).*/
+//在ms时间内rehash，超过则停止
 int dictRehashMilliseconds(dict *d, int ms) {
     long long start = timeInMilliseconds();
     int rehashes = 0;
