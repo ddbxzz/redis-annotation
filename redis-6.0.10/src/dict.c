@@ -70,7 +70,7 @@ static long _dictKeyIndex(dict *ht, const void *key, uint64_t hash, dictEntry **
 static int _dictInit(dict *ht, dictType *type, void *privDataPtr);
 
 /* -------------------------- hash functions -------------------------------- */
-
+//哈希方法种子
 static uint8_t dict_hash_function_seed[16];
 
 void dictSetHashFunctionSeed(uint8_t *seed) {
@@ -107,7 +107,10 @@ static void _dictReset(dictht *ht)
     ht->used = 0;
 }
 
-/* Create a new hash table */
+/* Create a new hash table 
+参数type自定义对哈希表节点的key和value进行的操作
+参数privDataPtr可以存放用户自定义信息，在type的操作函数中可以取得这个值
+*/
 dict *dictCreate(dictType *type,
         void *privDataPtr)
 {
@@ -131,13 +134,25 @@ int _dictInit(dict *d, dictType *type,
 }
 
 /* Resize the table to the minimal size that contains all the elements,
- * but with the invariant of a USED/BUCKETS ratio near to <= 1 */
+ * but with the invariant of a USED/BUCKETS ratio near to <= 1
+ * dictResize函数重新计算并设置字典的哈希数组大小，调整到能包含所有元素的最小大小，
+ * 保持已使用节点数量/桶大小的比率接近<=1。
+ *  */
+
+/* 
+当Redis有子进程在做 RDB saving、AOF rewriting 或 module 相关的任务时，不会进行缩容操作
+缩容后确保size大于等于DICT_HT_INITIAL_SIZE(4)
+缩容后确保载荷因子小于等于1
+从htNeedsResize可知，当哈希表的载荷因子小于0.1时会触发缩容操作
+ *  */
 int dictResize(dict *d)
 {
     unsigned long minimal;
 
+   //禁用字典resize或当前字典正在rehash时不缩容
     if (!dict_can_resize || dictIsRehashing(d)) return DICT_ERR;
     minimal = d->ht[0].used;
+    // 已使用节点数量小于散列数组的初始大小时，新空间大小设置为散列数组的初始大小
     if (minimal < DICT_HT_INITIAL_SIZE)
         minimal = DICT_HT_INITIAL_SIZE;
     return dictExpand(d, minimal);
@@ -152,7 +167,7 @@ int dictExpand(dict *d, unsigned long size)
         return DICT_ERR;
 
     dictht n; /* the new hash table */
-    unsigned long realsize = _dictNextPower(size);
+    unsigned long realsize = _dictNextPower(size); //计算扩展或缩放新哈希表的大小
 
     /* Rehashing to the same table size is not useful. */
     if (realsize == d->ht[0].size) return DICT_ERR;
@@ -165,6 +180,12 @@ int dictExpand(dict *d, unsigned long size)
 
     /* Is this the first initialization? If so it's not really a rehashing
      * we just set the first hash table so that it can accept keys. */
+
+    /* 
+    如果当前 ht[0].table == NULL，表示该操作仅为初始化 ht[0]；
+    否则，该操作初始化 ht[1] 以用于 Rehash。
+     */
+
     if (d->ht[0].table == NULL) {
         d->ht[0] = n;
         return DICT_OK;
@@ -973,12 +994,16 @@ static int _dictExpandIfNeeded(dict *d)
     return DICT_OK;
 }
 
-/* Our hash table capability is a power of two */
+/* Our hash table capability is a power of two 
+算扩展或缩放新哈希表的大小
+*/
 static unsigned long _dictNextPower(unsigned long size)
 {
     unsigned long i = DICT_HT_INITIAL_SIZE;
 
     if (size >= LONG_MAX) return LONG_MAX + 1LU;
+
+    /*计算新哈希表的大小：第一个大于等于size的2的N次方的数值 */
     while(1) {
         if (i >= size)
             return i;
