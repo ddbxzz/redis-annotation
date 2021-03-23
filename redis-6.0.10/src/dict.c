@@ -304,12 +304,18 @@ static void _dictRehashStep(dict *d) {
     if (d->iterators == 0) dictRehash(d,1);
 }
 
-/* Add an element to the target hash table */
+/* Add an element to the target hash table 
+*/
 int dictAdd(dict *d, void *key, void *val)
 {
+    /*
+    调用dictAddRaw函数，添加键，字典中键已存在则返回
+    NULL，否则添加键至Hash表中，并返回新加的Hash节点
+    */
     dictEntry *entry = dictAddRaw(d,key,NULL);
 
     if (!entry) return DICT_ERR;
+    //给返回的新节点设置值，即更新其val字段
     dictSetVal(d, entry, val);
     return DICT_OK;
 }
