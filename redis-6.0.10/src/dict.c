@@ -344,10 +344,14 @@ dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing)
     dictEntry *entry;
     dictht *ht;
 
+    //rehash 期间的插入操作也会触发一次槽位 rehash。
     if (dictIsRehashing(d)) _dictRehashStep(d);
 
     /* Get the index of the new element, or -1 if
-     * the element already exists. */
+     * the element already exists. 
+     * dictAddRaw 函数通过 _dictKeyIndex 返回的索引值来确认键是否在哈希表中，
+     * 不存在的话插入一个新的键值对在哈希表的槽位上。
+     * */
     if ((index = _dictKeyIndex(d, key, dictHashKey(d,key), existing)) == -1)
         return NULL;
 
@@ -370,7 +374,10 @@ dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing)
  * Add an element, discarding the old value if the key already exists.
  * Return 1 if the key was added from scratch, 0 if there was already an
  * element with such key and dictReplace() just performed a value update
- * operation. */
+ * operation. 
+ * 提供了添加和覆写的功能。其底层也是调用了dictAddRaw(), 如果key不存在，
+ * 则直接设置范围的dictEntry的value属性值；否则的话，则采取覆写的功能，同时释放value占用的资源。
+ * */
 int dictReplace(dict *d, void *key, void *val)
 {
     dictEntry *entry, *existing, auxentry;
@@ -400,7 +407,9 @@ int dictReplace(dict *d, void *key, void *val)
  * exists and can't be added (in that case the entry of the already
  * existing key is returned.)
  *
- * See dictAddRaw() for more information. */
+ * See dictAddRaw() for more information.
+ * 添加或者查找
+ *  */
 dictEntry *dictAddOrFind(dict *d, void *key) {
     dictEntry *entry, *existing;
     entry = dictAddRaw(d,key,&existing);
@@ -409,7 +418,12 @@ dictEntry *dictAddOrFind(dict *d, void *key) {
 
 /* Search and remove an element. This is an helper function for
  * dictDelete() and dictUnlink(), please check the top comment
- * of those functions. */
+ * of those functions. 
+ * 
+ *rehash期间的删除操作也会进行一次槽位 rehash。
+ *删除过程和查询过程类似，找到对应键值对，调整前后键值对的 next 指针然后释放内存。
+ *当哈希表的键值对被删除变得稀疏时，Redis 会对哈希表进行缩容。
+ * */
 static dictEntry *dictGenericDelete(dict *d, const void *key, int nofree) {
     uint64_t h, idx;
     dictEntry *he, *prevHe;
@@ -473,13 +487,18 @@ int dictDelete(dict *ht, const void *key) {
  * entry = dictUnlink(dictionary,entry);
  * // Do something with entry
  * dictFreeUnlinkedEntry(entry); // <- This does not need to lookup again.
+ * 
+ * 将key对应的dictEntry从dict中移除，但并未释放空间，只会导致查不到而已
  */
 dictEntry *dictUnlink(dict *ht, const void *key) {
     return dictGenericDelete(ht,key,1);
 }
 
 /* You need to call this function to really free the entry after a call
- * to dictUnlink(). It's safe to call this function with 'he' = NULL. */
+ * to dictUnlink(). It's safe to call this function with 'he' = NULL. 
+ * 
+ * 真正释放he空间
+ * */
 void dictFreeUnlinkedEntry(dict *d, dictEntry *he) {
     if (he == NULL) return;
     dictFreeKey(d, he);
@@ -487,7 +506,9 @@ void dictFreeUnlinkedEntry(dict *d, dictEntry *he) {
     zfree(he);
 }
 
-/* Destroy an entire dictionary */
+/* Destroy an entire dictionary 
+负责清空dictht，释放所占空间
+*/
 int _dictClear(dict *d, dictht *ht, void(callback)(void *)) {
     unsigned long i;
 
@@ -509,19 +530,28 @@ int _dictClear(dict *d, dictht *ht, void(callback)(void *)) {
     }
     /* Free the table and the allocated cache structure */
     zfree(ht->table);
-    /* Re-initialize the table */
+    /* Re-initialize the table 
+
+    重置，后续可以再次使用
+    */
     _dictReset(ht);
     return DICT_OK; /* never fails */
 }
 
-/* Clear & Release the hash table */
+/* Clear & Release the hash table 
+删除一个dict
+*/
 void dictRelease(dict *d)
 {
+    // 清空两个dictht
     _dictClear(d,&d->ht[0],NULL);
     _dictClear(d,&d->ht[1],NULL);
     zfree(d);
 }
 
+/*
+查找。先计算key的hash值，找到对应的槽，依次比较。但是由于存在rehash状态，所以需要查找两个dictht
+*/
 dictEntry *dictFind(dict *d, const void *key)
 {
     dictEntry *he;
@@ -543,6 +573,9 @@ dictEntry *dictFind(dict *d, const void *key)
     return NULL;
 }
 
+/*
+取出entry的值。它直接使用dictFind完成其功能
+*/
 void *dictFetchValue(dict *d, const void *key) {
     dictEntry *he;
 
@@ -555,7 +588,12 @@ void *dictFetchValue(dict *d, const void *key) {
  * When an unsafe iterator is initialized, we get the dict fingerprint, and check
  * the fingerprint again when the iterator is released.
  * If the two fingerprints are different it means that the user of the iterator
- * performed forbidden operations against the dictionary while iterating. */
+ * performed forbidden operations against the dictionary while iterating.
+ * 
+ * dictFingerprint函数返回字典的指纹。字典的指纹是一个64位的数字，它表示字典在一个给定时间点的状态，
+ * 其实就是一些字典熟悉的异或结果。当初始化了一个不安全的迭代器时，我们可以拿到字典的指纹，
+ * 并且在迭代器被释放时检查这个指纹。如果两个指纹不同就表示迭代器的所有者在迭代过程中进行了被禁止的操作。
+ *  */
 long long dictFingerprint(dict *d) {
     long long integers[6], hash = 0;
     int j;
@@ -1002,15 +1040,23 @@ unsigned long dictScan(dict *d,
 static int _dictExpandIfNeeded(dict *d)
 {
     /* Incremental rehashing already in progress. Return. */
+    //正在 rehash 不会进行扩容
     if (dictIsRehashing(d)) return DICT_OK;
 
     /* If the hash table is empty expand it to the initial size. */
+    //哈希表的大小为 0，扩容到初始大小 DICT_HT_INITIAL_SIZE
     if (d->ht[0].size == 0) return dictExpand(d, DICT_HT_INITIAL_SIZE);
 
     /* If we reached the 1:1 ratio, and we are allowed to resize the hash
      * table (global setting) or we should avoid it but the ratio between
      * elements/buckets is over the "safe" threshold, we resize doubling
-     * the number of buckets. */
+     * the number of buckets. 
+     * 
+     * 正常情况下 dict_can_resize 为 1，哈希表中键值对个数大于哈希表大小，就会扩容到键值对个数的两倍，
+     * 有些情况下 dict_can_resize 为 0，Redis 会避免扩容，但是如果哈希表已经很满（负载因子大于 5），这时候会强制扩容。
+     * 
+     * */
+
     if (d->ht[0].used >= d->ht[0].size &&
         (dict_can_resize ||
          d->ht[0].used/d->ht[0].size > dict_force_resize_ratio))
@@ -1043,7 +1089,11 @@ static unsigned long _dictNextPower(unsigned long size)
  * and the optional output parameter may be filled.
  *
  * Note that if we are in the process of rehashing the hash table, the
- * index is always returned in the context of the second (new) hash table. */
+ * index is always returned in the context of the second (new) hash table.
+ * 
+ * 该函数根据提供key、哈希值来获取哈希表的插入位置。如果该key在哈希表中已存在，
+ * 可以通过existing参数返回dictEntry地址，并将返回值设置为-1，表示key已存在。
+ *  */
 static long _dictKeyIndex(dict *d, const void *key, uint64_t hash, dictEntry **existing)
 {
     unsigned long idx, table;
@@ -1058,12 +1108,17 @@ static long _dictKeyIndex(dict *d, const void *key, uint64_t hash, dictEntry **e
         /* Search if this slot does not already contain the given key */
         he = d->ht[table].table[idx];
         while(he) {
+            //如果key 存在，则返回-1
             if (key==he->key || dictCompareKeys(d, key, he->key)) {
                 if (existing) *existing = he;
                 return -1;
             }
             he = he->next;
         }
+        /*
+        如果哈希表没有正在进行rehash操作，则表示只有0号哈希表中有数据，1号哈希表未使用,
+        就不要在1号哈希表中进行查找否则的话，就还需要遍历1号哈希表进行查找
+        */
         if (!dictIsRehashing(d)) break;
     }
     return idx;

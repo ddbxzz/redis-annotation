@@ -203,11 +203,14 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
 #define dictGetUnsignedIntegerVal(he) ((he)->v.u64)
 //获取指定节点的value，值为double
 #define dictGetDoubleVal(he) ((he)->v.d)
+
 //获取字典中哈希表的总长度，总长度=哈希表1散列数组长度+哈希表2散列数组长度
 #define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
+
 //获取字典中哈希表已被使用的节点数量，已被使用的节点数量 = 
 //哈希表1散列数组已被使用的节点数量+哈希表2散列数组已被使用的节点数量
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
+
 // 字典当前是否正在进行rehash操作
 #define dictIsRehashing(d) ((d)->rehashidx != -1)
 
