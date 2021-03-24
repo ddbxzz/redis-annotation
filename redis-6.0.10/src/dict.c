@@ -1192,7 +1192,10 @@ uint64_t dictGetHash(dict *d, const void *key) {
  * oldkey is a dead pointer and should not be accessed.
  * the hash value should be provided using dictGetHash.
  * no string / key comparison is performed.
- * return value is the reference to the dictEntry if found, or NULL if not found. */
+ * return value is the reference to the dictEntry if found, or NULL if not found.
+ * 
+ * 根据指针*oldptr和hash值hash在字典d中查找hash节点
+ *  */
 dictEntry **dictFindEntryRefByPtrAndHash(dict *d, const void *oldptr, uint64_t hash) {
     dictEntry *he, **heref;
     unsigned long idx, table;
@@ -1216,6 +1219,7 @@ dictEntry **dictFindEntryRefByPtrAndHash(dict *d, const void *oldptr, uint64_t h
 /* ------------------------------- Debugging ---------------------------------*/
 
 #define DICT_STATS_VECTLEN 50
+//获取一个表的全部信息
 size_t _dictGetStatsHt(char *buf, size_t bufsize, dictht *ht, int tableid) {
     unsigned long i, slots = 0, chainlen, maxchainlen = 0;
     unsigned long totchainlen = 0;
