@@ -355,6 +355,7 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 /* Anti-warning macro... */
 #define UNUSED(V) ((void) V)
 
+//节点最大的层数
 #define ZSKIPLIST_MAXLEVEL 32 /* Should be enough for 2^64 elements */
 #define ZSKIPLIST_P 0.25      /* Skiplist P = 1/4 */
 
@@ -910,20 +911,30 @@ struct sharedObjectsStruct {
 };
 
 /* ZSETs use a specialized version of Skiplists */
-typedef struct zskiplistNode {
-    sds ele;
-    double score;
-    struct zskiplistNode *backward;
+typedef struct zskiplistNode {  //定义了skiplist的节点结构
+    sds ele;   //存放的是节点数据
+    double score;   //数据对应的分数
+    struct zskiplistNode *backward;  //指向链表前一个节点的指针（前向指针）。节点只有1个前向指针，所以只有第1层链表是一个双向链表。
+    
+    /*
+    level[]存放指向各层链表后一个节点的指针（后向指针）。每层对应1个后向指针，
+    用forward字段表示。另外，每个后向指针还对应了一个span值，它表示当前的指针跨越了多少个节点。
+    span用于计算元素排名(rank)，这正是前面我们提到的Redis对于skiplist所做的一个扩展。
+    需要注意的是，level[]是一个柔性数组,因此它占用的内存不在zskiplistNode结构里面，而需要插入节点的时候单独为它分配。
+    也正因为如此，skiplist的每个节点所包含的指针数目才是不固定的，我们前面分析过的结论——skiplist每个节点包含的指针数目平均为1/(1-p)——才能有意义。
+    */
     struct zskiplistLevel {
         struct zskiplistNode *forward;
         unsigned long span;
     } level[];
 } zskiplistNode;
 
-typedef struct zskiplist {
-    struct zskiplistNode *header, *tail;
+typedef struct zskiplist {  //定义了真正的skiplist结构
+    struct zskiplistNode *header, *tail;   //头指针header和尾指针tail
+
+    //链表长度length，即链表包含的节点总数。注意，新创建的skiplist包含一个空的头指针，这个头指针不包含在length计数中。
     unsigned long length;
-    int level;
+    int level;  //level表示skiplist的总层数，即所有节点层数的最大值
 } zskiplist;
 
 typedef struct zset {
