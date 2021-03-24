@@ -301,6 +301,7 @@ int dictRehashMilliseconds(dict *d, int ms) {
  * dictionary so that the hash table automatically migrates from H1 to H2
  * while it is actively used. */
 static void _dictRehashStep(dict *d) {
+    // 如果存在安全的迭代器，就禁止rehash
     if (d->iterators == 0) dictRehash(d,1);
 }
 
@@ -626,6 +627,10 @@ long long dictFingerprint(dict *d) {
     return hash;
 }
 
+/*
+dict的迭代器
+迭代器分为非安全的和安全的两种，分别通过dictGetIterator和dictGetSafeIterator获取。
+*/
 dictIterator *dictGetIterator(dict *d)
 {
     dictIterator *iter = zmalloc(sizeof(*iter));
@@ -642,24 +647,34 @@ dictIterator *dictGetIterator(dict *d)
 dictIterator *dictGetSafeIterator(dict *d) {
     dictIterator *i = dictGetIterator(d);
 
+    //创建时不需要增加dict.iterators的值，在遍历正在开始后增加
     i->safe = 1;
     return i;
 }
 
+/*
+通过dictNext获取迭代器的下一个值。
+*/
 dictEntry *dictNext(dictIterator *iter)
 {
     while (1) {
         if (iter->entry == NULL) {
+            // 遍历一个新槽位下面的链表
             dictht *ht = &iter->d->ht[iter->table];
             if (iter->index == -1 && iter->table == 0) {
+                /*第一次遍历，刚刚进入遍历过程
+                也就是ht[0]数组的第一个元素下面的链表*/
                 if (iter->safe)
+                   //给字典打安全标记，禁止字典进行rehash
                     iter->d->iterators++;
                 else
+                    //记录迭代器指纹，如果遍历过程中字典有任何变动，指纹就会改变
                     iter->fingerprint = dictFingerprint(iter->d);
             }
             iter->index++;
             if (iter->index >= (long) ht->size) {
                 if (dictIsRehashing(iter->d) && iter->table == 0) {
+                    // 如果处于rehash中，那就继续遍历第二个 hashtable
                     iter->table++;
                     iter->index = 0;
                     ht = &iter->d->ht[1];
@@ -669,11 +684,14 @@ dictEntry *dictNext(dictIterator *iter)
             }
             iter->entry = ht->table[iter->index];
         } else {
-            iter->entry = iter->nextEntry;
+            iter->entry = iter->nextEntry;  //直接将下一个元素记录为本次迭代的元素
         }
         if (iter->entry) {
             /* We need to save the 'next' here, the iterator user
-             * may delete the entry we are returning. */
+             * may delete the entry we are returning. 
+             * 将下一个元素也记录到迭代器中，这点非常关键
+             * 防止安全迭代过程中当前元素被过期删除后，找不到下一个需要遍历的元素
+             * */
             iter->nextEntry = iter->entry->next;
             return iter->entry;
         }
@@ -681,6 +699,10 @@ dictEntry *dictNext(dictIterator *iter)
     return NULL;
 }
 
+/*
+遍历完成后要释放迭代器，安全迭代器需要去掉字典的禁止rehash的标记
+非安全迭代器需要检查指纹，如果有变动，服务器就会奔溃(failfast)
+*/
 void dictReleaseIterator(dictIterator *iter)
 {
     if (!(iter->index == -1 && iter->table == 0)) {
@@ -693,7 +715,11 @@ void dictReleaseIterator(dictIterator *iter)
 }
 
 /* Return a random entry from the hash table. Useful to
- * implement randomized algorithms */
+ * implement randomized algorithms 
+ * 
+ * 随机返回一个dict中的entry
+ * 先随机槽，再随机链表元素，并不是等概率的
+ * */
 dictEntry *dictGetRandomKey(dict *d)
 {
     dictEntry *he, *orighe;
@@ -705,7 +731,10 @@ dictEntry *dictGetRandomKey(dict *d)
     if (dictIsRehashing(d)) {
         do {
             /* We are sure there are no elements in indexes from 0
-             * to rehashidx-1 */
+             * to rehashidx-1 
+             * 
+             * 在rehash中，需要在两个dictht中随机槽索引
+             * */
             h = d->rehashidx + (random() % (d->ht[0].size +
                                             d->ht[1].size -
                                             d->rehashidx));
@@ -723,12 +752,13 @@ dictEntry *dictGetRandomKey(dict *d)
      * list and we need to get a random element from the list.
      * The only sane way to do so is counting the elements and
      * select a random index. */
-    listlen = 0;
+    listlen = 0;// 链表长度
     orighe = he;
     while(he) {
         he = he->next;
         listlen++;
     }
+    //在链表中随机entry
     listele = random() % listlen;
     he = orighe;
     while(listele--) he = he->next;
@@ -756,7 +786,10 @@ dictEntry *dictGetRandomKey(dict *d)
  * of the returned items, but only when you need to "sample" a given number
  * of continuous elements to run some kind of algorithm or to produce
  * statistics. However the function is much faster than dictGetRandomKey()
- * at producing N elements. */
+ * at producing N elements. 
+ * 
+ * 从字典中随机挑选dictEntry，保存到des数组中。最终返回实际获取到的元素的个数
+ * */
 unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count) {
     unsigned long j; /* internal hash table id, 0 or 1. */
     unsigned long tables; /* 1 or 2 tables? */
@@ -764,17 +797,20 @@ unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count) {
     unsigned long maxsteps;
 
     if (dictSize(d) < count) count = dictSize(d);
-    maxsteps = count*10;
+    maxsteps = count*10;   //控制了遍历的次数，防止在无法获取到足够的元素(比如哈希表中的元素本身就很少的情况)时陷入死循环
 
     /* Try to do a rehashing work proportional to 'count'. */
-    for (j = 0; j < count; j++) {
+    for (j = 0; j < count; j++) {    //如果正在rehash，则执行count次增量哈希
         if (dictIsRehashing(d))
             _dictRehashStep(d);
         else
             break;
     }
 
+    //如果正在进行rehash，则考虑两个哈希表
     tables = dictIsRehashing(d) ? 2 : 1;
+
+    //从两个哈希表中选取最大的maxsizemask，以此为依据生成随机索引
     maxsizemask = d->ht[0].sizemask;
     if (tables > 1 && maxsizemask < d->ht[1].sizemask)
         maxsizemask = d->ht[1].sizemask;
@@ -782,7 +818,7 @@ unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count) {
     /* Pick a random point inside the larger table. */
     unsigned long i = random() & maxsizemask;
     unsigned long emptylen = 0; /* Continuous empty entries so far. */
-    while(stored < count && maxsteps--) {
+    while(stored < count && maxsteps--) {//如果对桶的采样超过10 * count的次数，则停止采样，防止Redis长时间的阻塞在这个调用中
         for (j = 0; j < tables; j++) {
             /* Invariant of the dict.c rehashing: up to the indexes already
              * visited in ht[0] during the rehashing, there are no populated
@@ -801,7 +837,10 @@ unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count) {
             dictEntry *he = d->ht[j].table[i];
 
             /* Count contiguous empty buckets, and jump to other
-             * locations if they reach 'count' (with a minimum of 5). */
+             * locations if they reach 'count' (with a minimum of 5). 
+             * 如果对应的桶为空，则选择下一个桶进行采样；如果连续五个桶都为空，
+             * 则重新生成随机索引，这一步有可能会导致数据被重复采样。
+             * */
             if (he == NULL) {
                 emptylen++;
                 if (emptylen >= 5 && emptylen > count) {
@@ -821,7 +860,7 @@ unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count) {
                 }
             }
         }
-        i = (i+1) & maxsizemask;
+        i = (i+1) & maxsizemask;  //如果没有达到所需的count，那么选择下一个桶进行采样
     }
     return stored;
 }
@@ -838,6 +877,10 @@ unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count) {
  * appearing one after the other. Then we report a random element in the range.
  * In this way we smooth away the problem of different chain lengths. */
 #define GETFAIR_NUM_ENTRIES 15
+/*
+会先尝试调用 dictGetSomeKeys 获取 GETFAIR_NUM_ENTRIES 个 dictEntry，再随机挑选一个返回
+调用 dictGetSomeKeys 返回值为 0 时，直接调用 dictGetRandomKey，返回其结果
+*/
 dictEntry *dictGetFairRandomKey(dict *d) {
     dictEntry *entries[GETFAIR_NUM_ENTRIES];
     unsigned int count = dictGetSomeKeys(d,entries,GETFAIR_NUM_ENTRIES);
@@ -945,6 +988,8 @@ static unsigned long rev(unsigned long v) {
  *    we are sure we don't miss keys moving during rehashing.
  * 3) The reverse cursor is somewhat hard to understand at first, but this
  *    comment is supposed to help.
+ * 
+ * ref  :  http://chenzhenianqing.com/articles/1101.html
  */
 unsigned long dictScan(dict *d,
                        unsigned long v,
