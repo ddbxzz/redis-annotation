@@ -86,6 +86,7 @@ zskiplist *zslCreate(void) {
     zsl = zmalloc(sizeof(*zsl));
     zsl->level = 1;
     zsl->length = 0;
+    //创建ZSKIPLIST_MAXLEVEL层的头结点
     zsl->header = zslCreateNode(ZSKIPLIST_MAXLEVEL,0,NULL);
     for (j = 0; j < ZSKIPLIST_MAXLEVEL; j++) {
         zsl->header->level[j].forward = NULL;
@@ -130,7 +131,13 @@ int zslRandomLevel(void) {
 
 /* Insert a new node in the skiplist. Assumes the element does not already
  * exist (up to the caller to enforce that). The skiplist takes ownership
- * of the passed SDS string 'ele'. */
+ * of the passed SDS string 'ele'.
+ * 查找插入点、插入节点、更新前后节点的 forward、backward 属性、更新 跳跃表属性
+ * 
+ * 跳跃表的顺序是按照 score 分值进行排列的，一般查找是从最高层 level 开始遍历查找，
+ * 如果当前节点的 score 小于新 score 则继续往 forward 方向查找，否则，
+ * 则降低一层继续往 forward 方向查找，直到找到 小于 score 但是最接近的节点
+ *  */
 zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned int rank[ZSKIPLIST_MAXLEVEL];
