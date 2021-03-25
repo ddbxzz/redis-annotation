@@ -1980,7 +1980,10 @@ void addACLLogEntry(client *c, int reason, int keypos, sds username);
 
 /* Struct to hold an inclusive/exclusive range spec by score comparison. */
 typedef struct {
+
+    //最小最大值
     double min, max;
+    //是否包括最小值/最大值
     int minex, maxex; /* are min or max exclusive? */
 } zrangespec;
 
