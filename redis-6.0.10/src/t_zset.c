@@ -481,6 +481,8 @@ unsigned long zslDeleteRangeByLex(zskiplist *zsl, zlexrangespec *range, dict *di
         while (x->level[i].forward &&
             !zslLexValueGteMin(x->level[i].forward->ele,range))
                 x = x->level[i].forward;
+        
+        //while循环跳出时，用update[i]记录第i层所遍历到的最后一个节点
         update[i] = x;
     }
 
@@ -688,19 +690,23 @@ int zslParseLexRange(robj *min, robj *max, zlexrangespec *spec) {
 /* This is just a wrapper to sdscmp() that is able to
  * handle shared.minstring and shared.maxstring as the equivalent of
  * -inf and +inf for strings */
+//比较字典序
 int sdscmplex(sds a, sds b) {
     if (a == b) return 0;
+    // minstring和maxstring是Redis预定义的用于表示最小和最大字符串的
     if (a == shared.minstring || b == shared.maxstring) return -1;
     if (a == shared.maxstring || b == shared.minstring) return 1;
     return sdscmp(a,b);
 }
 
+//判断value是否大于等于（由minex决定是否取等于）范围spec的最小值。通过字典序来比较
 int zslLexValueGteMin(sds value, zlexrangespec *spec) {
     return spec->minex ?
         (sdscmplex(value,spec->min) > 0) :
         (sdscmplex(value,spec->min) >= 0);
 }
 
+//判断value是否小于等于（由maxex决定是否取等于）范围spec的最大值
 int zslLexValueLteMax(sds value, zlexrangespec *spec) {
     return spec->maxex ?
         (sdscmplex(value,spec->max) < 0) :
