@@ -354,7 +354,7 @@ int zslValueLteMax(double value, zrangespec *spec) {
 }
 
 /* Returns if there is a part of the zset is in range.
-判断跳跃表中是否有节点处于范围range中。这里有个前提，所有节点的score都相等。
+判断跳跃表中是否有节点处于范围range中。
 */
 int zslIsInRange(zskiplist *zsl, zrangespec *range) {
     zskiplistNode *x;
@@ -402,7 +402,10 @@ zskiplistNode *zslFirstInRange(zskiplist *zsl, zrangespec *range) {
 }
 
 /* Find the last node that is contained in the specified range.
- * Returns NULL when no element is contained in the range. */
+ * Returns NULL when no element is contained in the range. 
+ *
+ *查找跳跃表落在给定区间范围内的最后一个节点
+ */
 zskiplistNode *zslLastInRange(zskiplist *zsl, zrangespec *range) {
     zskiplistNode *x;
     int i;
@@ -429,7 +432,10 @@ zskiplistNode *zslLastInRange(zskiplist *zsl, zrangespec *range) {
 /* Delete all the elements with score between min and max from the skiplist.
  * Min and max are inclusive, so a score >= min || score <= max is deleted.
  * Note that this function takes the reference to the hash table view of the
- * sorted set, in order to remove the elements from the hash table too. */
+ * sorted set, in order to remove the elements from the hash table too. 
+ *
+ *删除skiplist编码的有序集合中分值在指定范围的元素
+ */
 unsigned long zslDeleteRangeByScore(zskiplist *zsl, zrangespec *range, dict *dict) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned long removed = 0;
@@ -455,12 +461,15 @@ unsigned long zslDeleteRangeByScore(zskiplist *zsl, zrangespec *range, dict *dic
         zslDeleteNode(zsl,x,update);
         dictDelete(dict,x->ele);
         zslFreeNode(x); /* Here is where x->ele is actually released. */
-        removed++;
+        removed++;        // 记录删除节点个数
         x = next;
     }
     return removed;
 }
 
+/*
+删除以字典序表示的范围内所有节点。这个方法有个前提条件，跳跃表中的所有score都是相同的
+*/
 unsigned long zslDeleteRangeByLex(zskiplist *zsl, zlexrangespec *range, dict *dict) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned long removed = 0;
