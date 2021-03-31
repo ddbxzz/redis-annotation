@@ -468,7 +468,7 @@ unsigned long zslDeleteRangeByScore(zskiplist *zsl, zrangespec *range, dict *dic
 }
 
 /*
-删除以字典序表示的范围内所有节点。这个方法有个前提条件，跳跃表中的所有score都是相同的
+删除以字典序表示的范围内所有节点。
 */
 unsigned long zslDeleteRangeByLex(zskiplist *zsl, zlexrangespec *range, dict *dict) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
@@ -502,7 +502,12 @@ unsigned long zslDeleteRangeByLex(zskiplist *zsl, zlexrangespec *range, dict *di
 }
 
 /* Delete all the elements with rank between start and end from the skiplist.
- * Start and end are inclusive. Note that start and end need to be 1-based */
+ * Start and end are inclusive. Note that start and end need to be 1-based 
+ * 
+ * 删除从start开始到end之间所有的元素，这里的start以及end都是从1开始的索引值，
+ * 由于跳跃表是为了实现有序集合的，在这种实现了Redis还会使用一个哈希表来实现集合的辅助功能，
+ * 因为这个函数在参数列表中还有一个哈希表指针dict，用于在从跳跃表中删除节点的同时，从哈希表中将对应的节点也一并删除
+ * */
 unsigned long zslDeleteRangeByRank(zskiplist *zsl, unsigned int start, unsigned int end, dict *dict) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned long traversed = 0, removed = 0;
@@ -514,7 +519,7 @@ unsigned long zslDeleteRangeByRank(zskiplist *zsl, unsigned int start, unsigned 
             traversed += x->level[i].span;
             x = x->level[i].forward;
         }
-        update[i] = x;
+        update[i] = x;   //update[i]表示第i层排名最靠近 start的那个点。
     }
 
     traversed++;
@@ -535,6 +540,7 @@ unsigned long zslDeleteRangeByRank(zskiplist *zsl, unsigned int start, unsigned 
  * Returns 0 when the element cannot be found, rank otherwise.
  * Note that the rank is 1-based due to the span of zsl->header to the
  * first element. */
+//通过score和ele得到该节点在zskiplist中的排位
 unsigned long zslGetRank(zskiplist *zsl, double score, sds ele) {
     zskiplistNode *x;
     unsigned long rank = 0;
@@ -559,9 +565,10 @@ unsigned long zslGetRank(zskiplist *zsl, double score, sds ele) {
 }
 
 /* Finds an element by its rank. The rank argument needs to be 1-based. */
+//返回跳跃表在给定排位上的节点
 zskiplistNode* zslGetElementByRank(zskiplist *zsl, unsigned long rank) {
     zskiplistNode *x;
-    unsigned long traversed = 0;
+    unsigned long traversed = 0;   //排位值，跨越过的节点数
     int i;
 
     x = zsl->header;
@@ -579,9 +586,16 @@ zskiplistNode* zslGetElementByRank(zskiplist *zsl, unsigned long rank) {
 }
 
 /* Populate the rangespec according to the objects min and max. */
+//把客户端传过来的范围min、max转换成zrangespec区间类型 
 static int zslParseRange(robj *min, robj *max, zrangespec *spec) {
     char *eptr;
     spec->minex = spec->maxex = 0;
+
+/*
+double strtod(const char *str, char **endptr)
+str -- 要转换为双精度浮点数的字符串。
+endptr -- 对类型为 char* 的对象的引用，其值由函数设置为 str 中数值后的下一个字符。
+*/
 
     /* Parse the min-max interval. If one of the values is prefixed
      * by the "(" character, it's considered "open". For instance
@@ -629,26 +643,29 @@ static int zslParseRange(robj *min, robj *max, zrangespec *spec) {
   * returned.
   *
   * If the string is not a valid range C_ERR is returned, and the value
-  * of *dest and *ex is undefined. */
+  * of *dest and *ex is undefined. 
+  * 
+  * 从给定对象中解析出一个sds，并作为range中的一个边界使用
+  * */
 int zslParseLexRangeItem(robj *item, sds *dest, int *ex) {
     char *c = item->ptr;
 
     switch(c[0]) {
-    case '+':
+    case '+':    //最大的sds字符串
         if (c[1] != '\0') return C_ERR;
         *ex = 1;
         *dest = shared.maxstring;
         return C_OK;
-    case '-':
+    case '-':    //最小的sds字符串
         if (c[1] != '\0') return C_ERR;
         *ex = 1;
         *dest = shared.minstring;
         return C_OK;
-    case '(':
+    case '(':    //开区间
         *ex = 1;
-        *dest = sdsnewlen(c+1,sdslen(c)-1);
+        *dest = sdsnewlen(c+1,sdslen(c)-1);    //除(外的字符组成sds字符串
         return C_OK;
-    case '[':
+    case '[':    //闭区间
         *ex = 0;
         *dest = sdsnewlen(c+1,sdslen(c)-1);
         return C_OK;
@@ -713,7 +730,10 @@ int zslLexValueLteMax(sds value, zlexrangespec *spec) {
         (sdscmplex(value,spec->max) <= 0);
 }
 
-/* Returns if there is a part of the zset is in the lex range. */
+/* Returns if there is a part of the zset is in the lex range. 
+
+如果集合zset的部分在字典序区间中，就返回1，否则返回0
+*/
 int zslIsInLexRange(zskiplist *zsl, zlexrangespec *range) {
     zskiplistNode *x;
 
