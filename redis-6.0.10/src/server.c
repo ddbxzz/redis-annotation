@@ -2825,7 +2825,11 @@ void resetServerStats(void) {
 
 /* Make the thread killable at any time, so that kill threads functions
  * can work reliably (default cancelability type is PTHREAD_CANCEL_DEFERRED).
- * Needed for pthread_cancel used by the fast memory test used by the crash report. */
+ * Needed for pthread_cancel used by the fast memory test used by the crash report.
+ * 
+ * 函数pthread_setcancelstate()和pthread_setcanceltype()会设定标志，允许线程对取消请求的
+响应过程加以控制。
+ *  */
 void makeThreadKillable(void) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
@@ -5044,11 +5048,23 @@ void setupSignalHandlers(void) {
 
 #ifdef HAVE_BACKTRACE
     sigemptyset(&act.sa_mask);
+    /*
+    SA_NODEFER-------捕获该信号时，不会在执行处理器程序时将该信号自动添加到进程掩码中
+    SA_RESETHAND------当捕获该信号时，会在调用处理器函数之前将信号处置重置为默认值（即SIG_DFL）（默
+    认情况下，信号处理器函数保持建立状态，直至进一步调用sigaction()将其显式解除。
+    SA_SIGINFO-------如果在使用sigaction()创建处理器函数时设置了SA_SIGINFO 标志，那么在收到信号时处
+    理器函数可以获取该信号的一些附加信息。
+    */
     act.sa_flags = SA_NODEFER | SA_RESETHAND | SA_SIGINFO;
     act.sa_sigaction = sigsegvHandler;
+
+    //SIGSEGV是当一个进程执行了一个无效的内存引用，或发生段错误时发送给它的信号。
     sigaction(SIGSEGV, &act, NULL);
+    //总线错误（bus error）是一种硬件故障，为通知操作系统一个进程正尝试访问CPU无法访问的物理地址，即一个无效的地址总线地址
     sigaction(SIGBUS, &act, NULL);
+    //SIGFPE是当一个进程执行了一个错误的算术操作时发送给它的信号 除以零
     sigaction(SIGFPE, &act, NULL);
+    //当进程试图执行非法、格式错误、未知或特权指令时，SIGILL信号被发送到该进程。
     sigaction(SIGILL, &act, NULL);
 #endif
     return;

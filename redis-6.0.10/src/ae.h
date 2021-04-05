@@ -41,11 +41,13 @@
 #define AE_NONE 0       /* No events registered. */
 #define AE_READABLE 1   /* Fire when descriptor is readable. */
 #define AE_WRITABLE 2   /* Fire when descriptor is writable. */
-#define AE_BARRIER 4    /* With WRITABLE, never fire the event if the
+#define AE_BARRIER 4   
+ /* With WRITABLE, never fire the event if the
                            READABLE event already fired in the same event
                            loop iteration. Useful when you want to persist
                            things to disk before sending replies, and want
-                           to do that in a group fashion. */
+                           to do that in a group fashion. 
+                           */
 
 #define AE_FILE_EVENTS (1<<0)
 #define AE_TIME_EVENTS (1<<1)
@@ -68,47 +70,76 @@ typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *client
 typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientData);
 typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
-/* File event structure */
+/* File event structure 
+文件时间处理与套接字相关的工作，在aeEventLoop中以数组的形式保存
+*/
 typedef struct aeFileEvent {
+    /* AE_READABLE 当fd是可读的时候，mask为此值
+     AE_WRITABLE 当fd是可写的时候，mask为此值
+     AE_BARRIER 当读写均可用的时候，先写后读，适用于写需求优先级比较高的情况
+    */
     int mask; /* one of AE_(READABLE|WRITABLE|BARRIER) */
     aeFileProc *rfileProc;
     aeFileProc *wfileProc;
+
+    // 客户端传入的数据
     void *clientData;
 } aeFileEvent;
 
-/* Time event structure */
+/* Time event structure 
+时间事件在aeEventLoop中以链表保存，aeCreateTimeEvent()会将新创建的时间事件添加在链表头：
+*/
 typedef struct aeTimeEvent {
+    //时间事件的ID，全局唯一，每增加一个等同于aeEventLoop.timeEventNextId++
     long long id; /* time event identifier. */
+    //秒，在时间截止时触发timeProc
     long when_sec; /* seconds */
+    //毫秒，在时间截止时触发timeProc
     long when_ms; /* milliseconds */
+    //时间事件处理函数
     aeTimeProc *timeProc;
+    //时间事件的最后一次处理程序，若已设置，则删除时间事件时会被调用
     aeEventFinalizerProc *finalizerProc;
     void *clientData;
-    struct aeTimeEvent *prev;
-    struct aeTimeEvent *next;
+    struct aeTimeEvent *prev;  //时间事件链表的前节点
+    struct aeTimeEvent *next;  //时间事件链表的后节点
     int refcount; /* refcount to prevent timer events from being
   		   * freed in recursive time event calls. */
 } aeTimeEvent;
 
 /* A fired event */
 typedef struct aeFiredEvent {
+    //就绪文件描述符
     int fd;
+    // 文件事件的 读写 类型
     int mask;
 } aeFiredEvent;
 
 /* State of an event based program */
 typedef struct aeEventLoop {
+    //最大文件描述符的值
     int maxfd;   /* highest file descriptor currently registered */
+
     int setsize; /* max number of file descriptors tracked */
+
     long long timeEventNextId;
+
     time_t lastTime;     /* Used to detect system clock skew */
+
     aeFileEvent *events; /* Registered events */
+
     aeFiredEvent *fired; /* Fired events */
+
     aeTimeEvent *timeEventHead;
+
     int stop;
+
     void *apidata; /* This is used for polling API specific data */
+
     aeBeforeSleepProc *beforesleep;
+
     aeBeforeSleepProc *aftersleep;
+    
     int flags;
 } aeEventLoop;
 
