@@ -71,7 +71,7 @@ typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientDat
 typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
 /* File event structure 
-文件时间处理与套接字相关的工作，在aeEventLoop中以数组的形式保存
+文件事件处理与套接字相关的工作
 */
 typedef struct aeFileEvent {
     /* AE_READABLE 当fd是可读的时候，mask为此值
@@ -119,25 +119,29 @@ typedef struct aeFiredEvent {
 typedef struct aeEventLoop {
     //最大文件描述符的值
     int maxfd;   /* highest file descriptor currently registered */
-
+    //文件描述符的最大监听数
     int setsize; /* max number of file descriptors tracked */
-
+    //用于生成时间事件的唯一标识id  
     long long timeEventNextId;
-
+    //用于检测系统时间是否变更（判断标准 now<lastTime）
     time_t lastTime;     /* Used to detect system clock skew */
-
+    //注册要使用的文件事件，这里的分离表实现为直接索引，即通过fd来访问，实现事件的分离
     aeFileEvent *events; /* Registered events */
-
+    //已触发的事件
     aeFiredEvent *fired; /* Fired events */
-
+   //指向首个时间事件结构体, 而时间事件结构体里有next指针, 
+   //指向下一个结构体, 实际上整体看上去是一个环形链表(最后一个时间事件结构体里的next指针会指向timeEventHead
     aeTimeEvent *timeEventHead;
-
+   //停止标志，1表示停止
     int stop;
-
+   //指向底层不同多路复用实现的数据结构, 可以是epoll, select, evport或者是kqueue
+   //如果使用的是select，那么状态数据包含了不同的fd_set；如果使用的是epoll，
+   //状态数据包含了epoll_create()返回的fd，还有用于接收epoll_wait()返回的存在可用事件的列表events。
     void *apidata; /* This is used for polling API specific data */
-
+    // 事件循环器 新一轮循环前的钩子函数
     aeBeforeSleepProc *beforesleep;
 
+    // 事件循环器 一轮循环后的钩子函数
     aeBeforeSleepProc *aftersleep;
     
     int flags;

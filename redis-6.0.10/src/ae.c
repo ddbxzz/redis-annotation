@@ -60,6 +60,12 @@
     #endif
 #endif
 
+/*
+初始化一个aeEventLoop结构体，aeEventLoop可以看作是某一种多路复用模式的封装。redis server有一个aeEventLoop，即server.el
+setsize参数, 它标识了当前aeEventLoop最大可以监听的文件描述符数(通常redis传入server.maxclients+CONFIG_FDSET_INCR,
+也就是在用户指定的最大客户端连接数的基础上再额外增加128, 这128可以用于Redis内部打开AOF,RDB文件以及主从, 集群互相通信所对应的文件句柄), 
+创建aeEventLoop时, aeFileEvent和aeFiredEvent数组的大小就由setsize确定。
+*/
 aeEventLoop *aeCreateEventLoop(int setsize) {
     aeEventLoop *eventLoop;
     int i;
@@ -150,6 +156,14 @@ void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
 
+/*
+监听一个客户端连接的状态变化，把客户端连接添加到事件驱动对象中进行监听
+eventLoop：由 aeCreateEventLoop() 函数创建的事件驱动对象。
+fd：客户端连接socket句柄。
+mask：监听客户端连接的事件，有 AE_READABLE（读） 和 AE_WRITABLE（写） 两种事件。
+proc：事件发生时的处理函数。
+clientData：proc 函数的参数。
+*/
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
@@ -533,6 +547,10 @@ int aeWait(int fd, int mask, long long milliseconds) {
     }
 }
 
+/*
+启动事件循环器
+在初始化完成后，Redis就一直在aeMain()中处理事件循环：
+*/
 void aeMain(aeEventLoop *eventLoop) {
     eventLoop->stop = 0;
     while (!eventLoop->stop) {
