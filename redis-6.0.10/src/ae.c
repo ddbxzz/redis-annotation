@@ -83,6 +83,8 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
     eventLoop->beforesleep = NULL;
     eventLoop->aftersleep = NULL;
     eventLoop->flags = 0;
+
+    //为创建底层IO处理的数据，如epoll，创建epoll_event,和epfd
     if (aeApiCreate(eventLoop) == -1) goto err;
     /* Events with mask == AE_NONE are not set. So let's initialize the
      * vector with it. */
@@ -99,7 +101,9 @@ err:
     return NULL;
 }
 
-/* Return the current set size. */
+/* Return the current set size. 
+获取eventloop事件队列大小
+*/
 int aeGetSetSize(aeEventLoop *eventLoop) {
     return eventLoop->setsize;
 }
@@ -119,6 +123,7 @@ void aeSetDontWait(aeEventLoop *eventLoop, int noWait) {
  * performed at all.
  *
  * Otherwise AE_OK is returned and the operation is successful. */
+//重新设置大小
 int aeResizeSetSize(aeEventLoop *eventLoop, int setsize) {
     int i;
 
@@ -137,6 +142,7 @@ int aeResizeSetSize(aeEventLoop *eventLoop, int setsize) {
     return AE_OK;
 }
 
+//删除eventloop结构
 void aeDeleteEventLoop(aeEventLoop *eventLoop) {
     aeApiFree(eventLoop);
     zfree(eventLoop->events);
@@ -152,11 +158,13 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
     zfree(eventLoop);
 }
 
+//设置eventloop停止标记
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
 
 /*
+创建文件事件，并将该事件注册到eventLoop中
 监听一个客户端连接的状态变化，把客户端连接添加到事件驱动对象中进行监听
 eventLoop：由 aeCreateEventLoop() 函数创建的事件驱动对象。
 fd：客户端连接socket句柄。
@@ -171,8 +179,12 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         errno = ERANGE;
         return AE_ERR;
     }
+
+    //取出对应的aeFileEvent事件
+    //直接使用fd来获取FileEvent，来后面分离事件时也采用这种方法（直接索引）
     aeFileEvent *fe = &eventLoop->events[fd];
 
+    //该该事件添加eventLoop中或者修改原来的已有的（保留旧的）
     if (aeApiAddEvent(eventLoop, fd, mask) == -1)
         return AE_ERR;
     fe->mask |= mask;
@@ -184,6 +196,12 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
     return AE_OK;
 }
 
+/*
+把客户端连接从事件驱动库中删除
+eventLoop：由 aeCreateEventLoop() 函数创建的事件驱动对象。
+fd：客户端连接socket句柄。
+mask：监听客户端连接的事件，有 AE_READABLE（读） 和 AE_WRITABLE（写） 两种事件
+*/
 void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 {
     if (fd >= eventLoop->setsize) return;
@@ -192,10 +210,12 @@ void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 
     /* We want to always remove AE_BARRIER if set when AE_WRITABLE
      * is removed. */
+    //如果在删除AE_WRITABLE时设置了AE_BARRIER，则始终删除AE_BARRIER
     if (mask & AE_WRITABLE) mask |= AE_BARRIER;
 
     aeApiDelEvent(eventLoop, fd, mask);
-    fe->mask = fe->mask & (~mask);
+    fe->mask = fe->mask & (~mask);       //清除对应的类型标记
+    // 如果删除的是最大的fd，则要更新maxfd
     if (fd == eventLoop->maxfd && fe->mask == AE_NONE) {
         /* Update the max fd */
         int j;
@@ -206,6 +226,7 @@ void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
     }
 }
 
+//获取文件事件
 int aeGetFileEvents(aeEventLoop *eventLoop, int fd) {
     if (fd >= eventLoop->setsize) return 0;
     aeFileEvent *fe = &eventLoop->events[fd];
@@ -222,6 +243,7 @@ static void aeGetTime(long *seconds, long *milliseconds)
     *milliseconds = tv.tv_usec/1000;
 }
 
+// 返回一个在当前时间戳上增加milliseconds的时间戳, sec存储秒单位, ms存储毫秒单位
 static void aeAddMillisecondsToNow(long long milliseconds, long *sec, long *ms) {
     long cur_sec, cur_ms, when_sec, when_ms;
 
@@ -236,6 +258,7 @@ static void aeAddMillisecondsToNow(long long milliseconds, long *sec, long *ms) 
     *ms = when_ms;
 }
 
+//创建一个定时事件并且将事件插入到事件循环定时事件表的首位, 同时该API返回新创建定时事件的id
 long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
         aeTimeProc *proc, void *clientData,
         aeEventFinalizerProc *finalizerProc)
@@ -251,12 +274,12 @@ long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
     te->finalizerProc = finalizerProc;
     te->clientData = clientData;
     te->prev = NULL;
-    te->next = eventLoop->timeEventHead;
+    te->next = eventLoop->timeEventHead;    // 将新的定时事件放在链表头部
     te->refcount = 0;
     if (te->next)
         te->next->prev = te;
     eventLoop->timeEventHead = te;
-    return id;
+    return id;    // 返回任务ID
 }
 
 int aeDeleteTimeEvent(aeEventLoop *eventLoop, long long id)
@@ -264,7 +287,7 @@ int aeDeleteTimeEvent(aeEventLoop *eventLoop, long long id)
     aeTimeEvent *te = eventLoop->timeEventHead;
     while(te) {
         if (te->id == id) {
-            te->id = AE_DELETED_EVENT_ID;
+            te->id = AE_DELETED_EVENT_ID;     // 惰性删除
             return AE_OK;
         }
         te = te->next;
