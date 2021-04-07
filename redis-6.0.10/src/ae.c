@@ -123,7 +123,7 @@ void aeSetDontWait(aeEventLoop *eventLoop, int noWait) {
  * performed at all.
  *
  * Otherwise AE_OK is returned and the operation is successful. */
-//重新设置大小
+//重新设置事件循环体的可注册事件数量
 int aeResizeSetSize(aeEventLoop *eventLoop, int setsize) {
     int i;
 
@@ -171,6 +171,8 @@ fd：客户端连接socket句柄。
 mask：监听客户端连接的事件，有 AE_READABLE（读） 和 AE_WRITABLE（写） 两种事件。
 proc：事件发生时的处理函数。
 clientData：proc 函数的参数。
+
+在server.c中initServer函数中创建文件事件
 */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
@@ -210,7 +212,8 @@ void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask)
 
     /* We want to always remove AE_BARRIER if set when AE_WRITABLE
      * is removed. */
-    //如果在删除AE_WRITABLE时设置了AE_BARRIER，则始终删除AE_BARRIER
+    //如果设置了AE_WRITABLE，此处会在mask中添加AE_BARRIER，用于后续一并清除这两个标识位。如果没有AE_WRITABLE，则无法
+    //  执行写操作，因此也无需写屏障
     if (mask & AE_WRITABLE) mask |= AE_BARRIER;
 
     aeApiDelEvent(eventLoop, fd, mask);
@@ -287,7 +290,7 @@ int aeDeleteTimeEvent(aeEventLoop *eventLoop, long long id)
     aeTimeEvent *te = eventLoop->timeEventHead;
     while(te) {
         if (te->id == id) {
-            te->id = AE_DELETED_EVENT_ID;     // 惰性删除
+            te->id = AE_DELETED_EVENT_ID;     // 惰性删除,在processTimeEvents中统一清理
             return AE_OK;
         }
         te = te->next;
@@ -335,7 +338,10 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
      * Here we try to detect system clock skews, and force all the time
      * events to be processed ASAP when this happens: the idea is that
      * processing events earlier is less dangerous than delaying them
-     * indefinitely, and practice suggests it is. */
+     * indefinitely, and practice suggests it is. 
+     * 
+     * 如果发现了系统时间被改变（小于上次 processTimeEvents 函数执行的开始时间），就会强制所有时间事件尽早执行。
+     * */
     if (now < eventLoop->lastTime) {
         te = eventLoop->timeEventHead;
         while(te) {
@@ -352,6 +358,10 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
         long long id;
 
         /* Remove events scheduled for deletion. */
+        /*Redis 处理时间事件时，不会在当前循环中直接移除不再需要执行的事件，
+        而是会在当前循环中将时间事件的 id 设置为 AE_DELETED_EVENT_ID，
+        然后再下一个循环中删除，并执行绑定的 finalizerProc。
+        */
         if (te->id == AE_DELETED_EVENT_ID) {
             aeTimeEvent *next = te->next;
             /* If a reference exists for this timer event,
@@ -383,6 +393,13 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
             te = te->next;
             continue;
         }
+
+        /*
+        在移除不需要执行的时间事件之后，我们就开始通过比较时间来判断是否需要调用 timeProc 函数，
+        timeProc 函数的返回值 retval 为时间事件执行的时间间隔：
+        retval == AE_NOMORE：将时间事件的 id 设置为 AE_DELETED_EVENT_ID，等待下次 aeProcessEvents 执行时将事件清除；
+        retval != AE_NOMORE：修改当前时间事件的执行时间并重复利用当前的时间事件；
+        */
         aeGetTime(&now_sec, &now_ms);
         if (now_sec > te->when_sec ||
             (now_sec == te->when_sec && now_ms >= te->when_ms))
@@ -419,23 +436,29 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
  * if flags has AE_CALL_AFTER_SLEEP set, the aftersleep callback is called.
  * if flags has AE_CALL_BEFORE_SLEEP set, the beforesleep callback is called.
  *
- * The function returns the number of events processed. */
+ * The function returns the number of events processed. 
+ * 
+ * 处理所有已到达的时间事件，以及所有已就绪的文件事件。
+ * 函数的返回值为已处理事件的数量
+ * */
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;
 
     /* Nothing to do? return ASAP */
+    // 如果既不是时间事件，也不是文件事件，则无需处理，直接返回
     if (!(flags & AE_TIME_EVENTS) && !(flags & AE_FILE_EVENTS)) return 0;
 
     /* Note that we want call select() even if there are no
      * file events to process as long as we want to process time
      * events, in order to sleep until the next time event is ready
      * to fire. */
+    // 如果有未处理的文件事件(maxfd != -1)或时间事件(未设置AE_DONT_WAIT标识)
     if (eventLoop->maxfd != -1 ||
         ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT))) {
         int j;
         aeTimeEvent *shortest = NULL;
-        struct timeval tv, *tvp;
+        struct timeval tv, *tvp;    //计算 IO 多路复用的等待时间 tvp
 
         if (flags & AE_TIME_EVENTS && !(flags & AE_DONT_WAIT))
             shortest = aeSearchNearestTimer(eventLoop);
@@ -447,10 +470,12 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 
             /* How many milliseconds we need to wait for the next
              * time event to fire? */
+            // 计算下一个时间事件发生前需要等待多少时间
             long long ms =
                 (shortest->when_sec - now_sec)*1000 +
                 shortest->when_ms - now_ms;
 
+            // 如果等待的时间大于0，则赋值到tvp变量中，否则tvp中的变量为0，表示立即执行
             if (ms > 0) {
                 tvp->tv_sec = ms/1000;
                 tvp->tv_usec = (ms % 1000)*1000;
@@ -458,7 +483,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
                 tvp->tv_sec = 0;
                 tvp->tv_usec = 0;
             }
-        } else {
+        } else {// 这种情况可能是不存在时间事件或设置了AE_DONT_WAIT
             /* If we have to check for events but need to return
              * ASAP because of AE_DONT_WAIT we need to set the timeout
              * to zero */
@@ -480,7 +505,12 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             eventLoop->beforesleep(eventLoop);
 
         /* Call the multiplexing API, will return only on timeout or when
-         * some event fires. */
+         * some event fires. 
+         
+         先计算最近的时间事件发生所需要等待的时间，然后调用 aeApiPoll 
+         方法在这段时间中等待事件的发生，在这段时间中如果发生了文件事件，
+         就会优先处理文件事件，否则就会一直等待，直到最近的时间事件需要触发：
+         */
         numevents = aeApiPoll(eventLoop, tvp);
 
         /* After sleep callback. */
@@ -504,6 +534,8 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
              * This is useful when, for instance, we want to do things
              * in the beforeSleep() hook, like fsyncing a file to disk,
              * before replying to a client. */
+            //如上注释所示，与一般服务端先处理请求，然后发送响应顺序相同，这里通常也先处理读事件，然后处理写事件。
+            //如果设置了写屏障，则先处理写事件，然后处理读事件。ae中的写屏障目前没有被使用
             int invert = fe->mask & AE_BARRIER;
 
             /* Note the "fe->mask & mask & ..." code: maybe an already
@@ -512,6 +544,8 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
              *
              * Fire the readable event if the call sequence is not
              * inverted. */
+
+            // 如果没有写屏障，且有读事件(fe->mask & AE_READABLE)，且注册了读函数(mask & AE_READABLE),则调用读函数处理读事件
             if (!invert && fe->mask & mask & AE_READABLE) {
                 fe->rfileProc(eventLoop,fd,fe->clientData,mask);
                 fired++;
@@ -519,6 +553,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             }
 
             /* Fire the writable event. */
+            // 如果有写事件(写数据不会导致阻塞)，且注册了写函数，则调用写函数处理写事件
             if (fe->mask & mask & AE_WRITABLE) {
                 if (!fired || fe->wfileProc != fe->rfileProc) {
                     fe->wfileProc(eventLoop,fd,fe->clientData,mask);
@@ -528,6 +563,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 
             /* If we have to invert the call, fire the readable event now
              * after the writable one. */
+            // 如果有写屏障，则执行与没有写屏障相反的操作，即先执行写，然后再执行读，适用于某些场景。
             if (invert) {
                 fe = &eventLoop->events[fd]; /* Refresh in case of resize. */
                 if ((fe->mask & mask & AE_READABLE) &&
@@ -550,6 +586,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 
 /* Wait for milliseconds until the given file descriptor becomes
  * writable/readable/exception */
+  //等待millionseconds直到文件描述符可读或者可写
 int aeWait(int fd, int mask, long long milliseconds) {
     struct pollfd pfd;
     int retmask = 0, retval;

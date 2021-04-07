@@ -87,7 +87,11 @@ typedef struct aeFileEvent {
 } aeFileEvent;
 
 /* Time event structure 
-时间事件在aeEventLoop中以链表保存，aeCreateTimeEvent()会将新创建的时间事件添加在链表头：
+一种是定时事件，每隔一段时间会执行一次；
+另一种是非定时事件，只会在某个时间点执行一次；
+
+
+时间事件在aeEventLoop中以链表保存，aeCreateTimeEvent()会将新创建的时间事件添加在链表头
 */
 typedef struct aeTimeEvent {
     //时间事件的ID，全局唯一，每增加一个等同于aeEventLoop.timeEventNextId++
@@ -103,6 +107,8 @@ typedef struct aeTimeEvent {
     void *clientData;
     struct aeTimeEvent *prev;  //时间事件链表的前节点
     struct aeTimeEvent *next;  //时间事件链表的后节点
+    
+    //防止计时器事件在递归时间事件调用中被释放
     int refcount; /* refcount to prevent timer events from being
   		   * freed in recursive time event calls. */
 } aeTimeEvent;
